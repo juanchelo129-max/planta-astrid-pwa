@@ -1,0 +1,30 @@
+PLANTA ASTRID - PWA v1
+
+OBJETIVO DE ESTA VERSIÓN
+- Probar que la aplicación puede abrirse sin Internet una vez instalada/cargada.
+- Leer parámetros de QR: c (contenedor), p (palet), r (romaneo).
+- NO modifica todavía Google Sheets.
+- NO reemplaza el Apps Script actual.
+- NO cambiar todavía los QR existentes.
+
+PRUEBA
+1. Subir estos archivos a un hosting HTTPS que permita Service Worker.
+2. Abrir la dirección de la PWA con Internet.
+3. Abrirla y comprobar que aparece "CONECTADO".
+4. Instalarla en el teléfono si el navegador ofrece la opción.
+5. Volver a abrirla mientras todavía hay Internet.
+6. Cortar Internet.
+7. Abrir nuevamente la PWA.
+8. Debe aparecer "SIN CONEXIÓN" y la pantalla debe seguir funcionando.
+9. Para probar un QR manualmente, abrir:
+   ?c=1
+   ?c=1&p=1
+   ?r=123456
+
+IMPORTANTE
+Esta es solamente la FASE 1. Si esta prueba funciona, en la FASE 2 se incorpora:
+- lector QR offline,
+- datos locales,
+- cola de acciones,
+- sincronización con Google Sheets al volver Internet,
+- y recién después se cambian los QR de producción.
