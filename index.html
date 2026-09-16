@@ -1,72 +1,733 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#14532d"><link rel="manifest" href="manifest.webmanifest"><title>Planta Astrid</title><style>body{font-family:Arial;margin:0;background:#f3f5f4;color:#18231c}header{background:#14532d;color:white;padding:20px;text-align:center}main{max-width:700px;margin:auto;padding:15px}.card{background:white;padding:16px;margin:12px 0;border-radius:14px}label{display:block;font-weight:bold;margin:8px 0 4px}input,select,textarea,button{width:100%;padding:11px;border-radius:9px;border:1px solid #ccd5cf;box-sizing:border-box}button{margin-top:12px;background:#14532d;color:white;font-weight:bold}.off{background:#fee2e2;color:#991b1b;padding:7px;border-radius:20px;display:inline-block}.on{background:#dcfce7;color:#166534;padding:7px;border-radius:20px;display:inline-block}</style></head><body><iframe name="iframeSincronizacion" style="display:none"></iframe><header><h1>PLANTA PROCESADORA ASTRID</h1><p>Trazabilidad en la Nube y Control de Planta</p></header><main><div class="card"><span id="estado">Comprobando...</span><p>Modo offline v2.1. Esta prueba guarda la carga localmente en el teléfono. Todavía no modifica Google Sheets.</p></div><div class="card"><h2>Identificación QR</h2><div id="qr">Sin datos</div></div><div class="card"><h2>👷 Encargado / Procesadora</h2><label>Contenedor</label><input id="c"><label>N° Palet</label><input id="p"><label>N° Romaneo (6 dígitos)</label><input id="r" maxlength="6" inputmode="numeric" readonly><label>Fecha elaboración</label><input id="f" type="date"><label>Producto</label><input id="prod" value="FLAME"><label>Marca Caja</label><input id="marca" value="ASTRID"><label>Cantidad Cajas</label><input id="cajas" type="number" value="125"><label>Cantidad Kilos</label><input id="kg" type="number" step=".01"><label>Clorado Agua</label><select id="cl"><option>Ok - Verificado</option><option>Pendiente</option></select><label>Detector de metales</label><select id="det"><option>Funcionando</option><option>No funcionando</option></select><label>Tipo Aceitado</label><select id="ace"><option>Vegetal Grado Alim.</option><option>Sin aceite</option><option>Otro</option></select><label>Observaciones</label><textarea id="obs"></textarea><label><input id="fum" type="checkbox" style="width:auto"> 🚨 Solicitar proceso al área de tratamiento</label><label>📷 Análisis diario</label><input id="foto" type="file" accept="image/*" capture="environment"><button onclick="guardar()">GUARDAR PALET OFFLINE</button></div><div class="card"><h2>📦 Acciones pendientes</h2><div id="lista">Cargando...</div></div></main><script>const DB='AstridOffline21';function estado(){let e=document.getElementById('estado');e.textContent=navigator.onLine?'CONECTADO':'SIN CONEXIÓN';e.className=navigator.onLine?'on':'off'}addEventListener('online',estado);addEventListener('offline',estado);estado();function abrir(){return new Promise((a,b)=>{let x=indexedDB.open(DB,1);x.onupgradeneeded=()=>x.result.createObjectStore('acciones',{keyPath:'id',autoIncrement:true});x.onsuccess=()=>a(x.result);x.onerror=()=>b(x.error)})}async function guardar(){let r=document.getElementById('r').value.trim();if(!/^\d{6}$/.test(r))return alert('El N° de Romaneo debe tener exactamente 6 dígitos.');if(!c.value||!p.value)return alert('Completá Contenedor y Palet.');let db=await abrir();let tx=db.transaction('acciones','readwrite');tx.objectStore('acciones').add({fecha:new Date().toISOString(),contenedor:c.value,palet:p.value,romaneo:r,fechaElaboracion:f.value,producto:prod.value,marca:marca.value,cajas:cajas.value,kilos:kg.value,clorado:cl.value,detector:det.value,aceitado:ace.value,fumigacion:fum.checked,observaciones:obs.value});tx.oncomplete=()=>{alert('Palet guardado en el teléfono. Pendiente de sincronización.');contar()}}async function contar(){let db=await abrir(),q=db.transaction('acciones').objectStore('acciones').getAll();q.onsuccess=()=>lista.textContent=q.result.length+' acción(es) guardada(s) localmente.'}let q=new URLSearchParams(location.search);if(q.get('r')){r.value=q.get('r');qr.innerHTML='<b>Romaneo:</b> '+q.get('r')}if(q.get('c')){c.value=q.get('c');qr.innerHTML='<b>Contenedor:</b> '+q.get('c')}if(q.get('p')){p.value=q.get('p');qr.innerHTML+=' &nbsp; <b>Palet:</b> '+q.get('p')}
+<!doctype html>
+<html lang="es">
 
-async function sincronizarPendientes() {
-  if (!navigator.onLine) return;
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#14532d">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Planta Astrid</title>
 
-  let db = await abrir();
-  let tx = db.transaction('acciones', 'readonly');
-  let req = tx.objectStore('acciones').getAll();
-
-  req.onsuccess = function() {
-    let acciones = req.result;
-
-    acciones.forEach(function(accion) {
-
-      let datos = {
-        contenedor: accion.contenedor,
-        palet: accion.palet,
-        romaneo: accion.romaneo,
-        fechaElaboracion: accion.fechaElaboracion,
-        producto: accion.producto,
-        marcaCaja: accion.marca,
-        cantidadCajas: accion.cajas,
-        cantidadKilos: accion.kilos,
-        cloradoAgua: accion.clorado,
-        detectorMetales: accion.detector,
-        tipoAceitado: accion.aceitado,
-        observaciones: accion.observaciones,
-        solicitarFumigacion: accion.fumigacion
-      };
-
-      let formulario = document.createElement('form');
-
-      formulario.method = 'POST';
-      formulario.action =
-        'https://script.google.com/macros/s/AKfycbwOfGf-OwyxNRJkcrkas6dm-TkUQF4NvtApDQhsNhZgm_VJvkzY6Ed9QyPsYAuGNGjZ/exec';
-      formulario.target = 'iframeSincronizacion';
-      formulario.style.display = 'none';
-
-      let campo = document.createElement('input');
-      campo.type = 'hidden';
-      campo.name = 'payload';
-
-      campo.value = JSON.stringify({
-        tipo: 'PALET',
-        offlineId: accion.offlineId || ('OFF-' + accion.id),
-        datos: datos
-      });
-
-      formulario.appendChild(campo);
-      document.body.appendChild(formulario);
-      formulario.submit();
-
-      setTimeout(function() {
-        formulario.remove();
-      }, 3000);
-    });
-
-    setTimeout(contar, 3500);
-  };
+<style>
+body{
+  font-family:Arial;
+  margin:0;
+  background:#f3f5f4;
+  color:#18231c
 }
 
-addEventListener('online', function() {
+header{
+  background:#14532d;
+  color:white;
+  padding:20px;
+  text-align:center
+}
+
+main{
+  max-width:700px;
+  margin:auto;
+  padding:15px
+}
+
+.card{
+  background:white;
+  padding:16px;
+  margin:12px 0;
+  border-radius:14px
+}
+
+label{
+  display:block;
+  font-weight:bold;
+  margin:8px 0 4px
+}
+
+input,select,textarea,button{
+  width:100%;
+  padding:11px;
+  border-radius:9px;
+  border:1px solid #ccd5cf;
+  box-sizing:border-box
+}
+
+button{
+  margin-top:12px;
+  background:#14532d;
+  color:white;
+  font-weight:bold
+}
+
+.off{
+  background:#fee2e2;
+  color:#991b1b;
+  padding:7px;
+  border-radius:20px;
+  display:inline-block
+}
+
+.on{
+  background:#dcfce7;
+  color:#166534;
+  padding:7px;
+  border-radius:20px;
+  display:inline-block
+}
+</style>
+
+</head>
+
+<body>
+
+<iframe
+  name="iframeSincronizacion"
+  style="display:none">
+</iframe>
+
+<header>
+  <h1>PLANTA PROCESADORA ASTRID</h1>
+  <p>Trazabilidad en la Nube y Control de Planta</p>
+</header>
+
+<main>
+
+<div class="card">
+  <span id="estado">Comprobando...</span>
+  <p>
+    Trabajo offline. Los datos quedan guardados en el teléfono
+    y se envían a Google Sheets cuando vuelve la conexión.
+  </p>
+</div>
+
+
+<div class="card">
+
+  <h2>Identificación QR</h2>
+
+  <div id="qr">
+    Sin datos
+  </div>
+
+</div>
+
+
+<div class="card">
+
+  <h2>👷 Encargado / Procesadora</h2>
+
+  <label>Contenedor</label>
+  <input id="c">
+
+  <label>N° Palet</label>
+  <input id="p">
+
+  <label>N° Romaneo (6 dígitos)</label>
+  <input
+    id="r"
+    maxlength="6"
+    inputmode="numeric"
+    readonly>
+
+  <label>Fecha elaboración</label>
+  <input
+    id="f"
+    type="date">
+
+  <label>Producto</label>
+  <input
+    id="prod"
+    value="FLAME">
+
+  <label>Marca Caja</label>
+  <input
+    id="marca"
+    value="ASTRID">
+
+  <label>Cantidad Cajas</label>
+  <input
+    id="cajas"
+    type="number"
+    value="125">
+
+  <label>Cantidad Kilos</label>
+  <input
+    id="kg"
+    type="number"
+    step=".01">
+
+  <label>Clorado Agua</label>
+
+  <select id="cl">
+    <option>Ok - Verificado</option>
+    <option>Pendiente</option>
+  </select>
+
+
+  <label>Detector de metales</label>
+
+  <select id="det">
+    <option>Funcionando</option>
+    <option>No funcionando</option>
+  </select>
+
+
+  <label>Tipo Aceitado</label>
+
+  <select id="ace">
+    <option>Vegetal Grado Alim.</option>
+    <option>Sin aceite</option>
+    <option>Otro</option>
+  </select>
+
+
+  <label>Observaciones</label>
+
+  <textarea id="obs"></textarea>
+
+
+  <label>
+    <input
+      id="fum"
+      type="checkbox"
+      style="width:auto">
+
+    🚨 Solicitar proceso al área de tratamiento
+  </label>
+
+
+  <label>📷 Análisis diario</label>
+
+  <input
+    id="foto"
+    type="file"
+    accept="image/*"
+    capture="environment">
+
+
+  <button onclick="guardar()">
+    GUARDAR PALET OFFLINE
+  </button>
+
+</div>
+
+
+<div class="card">
+
+  <h2>📦 Acciones pendientes</h2>
+
+  <div id="lista">
+    Cargando...
+  </div>
+
+</div>
+
+</main>
+
+
+<script>
+
+const DB = 'AstridOffline21';
+
+
+/* ============================================================
+   ESTADO DE CONEXIÓN
+============================================================ */
+
+function estado(){
+
+  let elemento = document.getElementById('estado');
+
+  if(navigator.onLine){
+
+    elemento.textContent = 'CONECTADO';
+    elemento.className = 'on';
+
+  }else{
+
+    elemento.textContent = 'SIN CONEXIÓN';
+    elemento.className = 'off';
+
+  }
+
+}
+
+
+addEventListener('online', function(){
+
   estado();
-  setTimeout(sincronizarPendientes, 1500);
+
+  setTimeout(function(){
+
+    sincronizarPendientes();
+
+  },1500);
+
 });
+
+
+addEventListener('offline', function(){
+
+  estado();
+
+});
+
+
+estado();
+
+
+/* ============================================================
+   BASE DE DATOS LOCAL
+============================================================ */
+
+function abrir(){
+
+  return new Promise(function(resolve,reject){
+
+    let x = indexedDB.open(DB,1);
+
+    x.onupgradeneeded = function(){
+
+      if(!x.result.objectStoreNames.contains('acciones')){
+
+        x.result.createObjectStore(
+          'acciones',
+          {
+            keyPath:'id',
+            autoIncrement:true
+          }
+        );
+
+      }
+
+    };
+
+
+    x.onsuccess = function(){
+
+      resolve(x.result);
+
+    };
+
+
+    x.onerror = function(){
+
+      reject(x.error);
+
+    };
+
+  });
+
+}
+
+
+/* ============================================================
+   GUARDAR PALET OFFLINE
+============================================================ */
+
+async function guardar(){
+
+  let romaneo =
+    document.getElementById('r').value.trim();
+
+  let contenedor =
+    document.getElementById('c').value.trim();
+
+  let nroPalet =
+    document.getElementById('p').value.trim();
+
+
+  if(!/^[0-9]{6}$/.test(romaneo)){
+
+    alert(
+      'El N° de Romaneo debe tener exactamente 6 dígitos.'
+    );
+
+    return;
+
+  }
+
+
+  if(!contenedor || !nroPalet){
+
+    alert(
+      'Completá Contenedor y Palet.'
+    );
+
+    return;
+
+  }
+
+
+  let db = await abrir();
+
+  let tx =
+    db.transaction(
+      'acciones',
+      'readwrite'
+    );
+
+
+  tx.objectStore('acciones').add({
+
+    fecha:
+      new Date().toISOString(),
+
+    contenedor:
+      contenedor,
+
+    nroPalet:
+      nroPalet,
+
+    romaneo:
+      romaneo,
+
+    descripcion:
+      '',
+
+    producto:
+      document.getElementById('prod').value,
+
+    marca:
+      document.getElementById('marca').value,
+
+    cajas:
+      document.getElementById('cajas').value,
+
+    unidades:
+      '',
+
+    fechaElab:
+      document.getElementById('f').value,
+
+    clorado:
+      document.getElementById('cl').value,
+
+    aceitado:
+      document.getElementById('ace').value,
+
+    detectorMetales:
+      document.getElementById('det').value,
+
+    solicitarFumigacion:
+      document.getElementById('fum').checked,
+
+    curado:
+      false,
+
+    observaciones:
+      document.getElementById('obs').value
+
+  });
+
+
+  tx.oncomplete = function(){
+
+    alert(
+      'Palet guardado en el teléfono. Pendiente de sincronización.'
+    );
+
+    contar();
+
+  };
+
+}
+
+
+/* ============================================================
+   CONTAR ACCIONES LOCALES
+============================================================ */
+
+async function contar(){
+
+  let db = await abrir();
+
+  let tx =
+    db.transaction(
+      'acciones',
+      'readonly'
+    );
+
+  let req =
+    tx.objectStore('acciones').getAll();
+
+
+  req.onsuccess = function(){
+
+    let cantidad =
+      req.result.length;
+
+
+    document.getElementById('lista').textContent =
+      cantidad +
+      ' acción(es) guardada(s) localmente.';
+
+  };
+
+}
+
+
+/* ============================================================
+   SINCRONIZAR CON GOOGLE SHEETS
+============================================================ */
+
+async function sincronizarPendientes(){
+
+  if(!navigator.onLine){
+
+    return;
+
+  }
+
+
+  try{
+
+    let db = await abrir();
+
+    let tx =
+      db.transaction(
+        'acciones',
+        'readonly'
+      );
+
+    let req =
+      tx.objectStore('acciones').getAll();
+
+
+    req.onsuccess = function(){
+
+      let acciones =
+        req.result;
+
+
+      if(!acciones.length){
+
+        contar();
+
+        return;
+
+      }
+
+
+      acciones.forEach(function(accion){
+
+        let datos = {
+
+          contenedor:
+            accion.contenedor,
+
+          nroPalet:
+            accion.nroPalet,
+
+          romaneo:
+            accion.romaneo,
+
+          descripcion:
+            accion.descripcion || '',
+
+          producto:
+            accion.producto || '',
+
+          marca:
+            accion.marca || '',
+
+          cajas:
+            accion.cajas || '',
+
+          unidades:
+            accion.unidades || '',
+
+          fechaElab:
+            accion.fechaElab || '',
+
+          clorado:
+            accion.clorado || '',
+
+          aceitado:
+            accion.aceitado || '',
+
+          detectorMetales:
+            accion.detectorMetales || '',
+
+          solicitarFumigacion:
+            !!accion.solicitarFumigacion,
+
+          curado:
+            !!accion.curado
+
+        };
+
+
+        let formulario =
+          document.createElement('form');
+
+
+        formulario.method =
+          'POST';
+
+
+        formulario.action =
+          'https://script.google.com/macros/s/AKfycbwOfGf-OwyxNRJkcrkas6dm-TkUQF4NvtApDQhsNhZgm_VJvkzY6Ed9QyPsYAuGNGjZ/exec';
+
+
+        formulario.target =
+          'iframeSincronizacion';
+
+
+        formulario.style.display =
+          'none';
+
+
+        let campo =
+          document.createElement('input');
+
+
+        campo.type =
+          'hidden';
+
+
+        campo.name =
+          'payload';
+
+
+        campo.value =
+          JSON.stringify({
+
+            tipo:
+              'PALET',
+
+            offlineId:
+              'OFF-' + accion.id,
+
+            datos:
+              datos
+
+          });
+
+
+        formulario.appendChild(campo);
+
+        document.body.appendChild(formulario);
+
+
+        formulario.submit();
+
+
+        setTimeout(function(){
+
+          formulario.remove();
+
+        },5000);
+
+      });
+
+
+      document.getElementById('lista').textContent =
+        acciones.length +
+        ' acción(es) enviándose a Google Sheets...';
+
+    };
+
+  }catch(error){
+
+    console.log(
+      'Error de sincronización:',
+      error
+    );
+
+  }
+
+}
+
+
+/* ============================================================
+   LEER QR
+============================================================ */
+
+let q =
+  new URLSearchParams(
+    location.search
+  );
+
+
+if(q.get('r')){
+
+  document.getElementById('r').value =
+    q.get('r');
+
+  document.getElementById('qr').innerHTML =
+    '<b>Romaneo:</b> ' +
+    q.get('r');
+
+}
+
+
+if(q.get('c')){
+
+  document.getElementById('c').value =
+    q.get('c');
+
+  document.getElementById('qr').innerHTML =
+    '<b>Contenedor:</b> ' +
+    q.get('c');
+
+}
+
+
+if(q.get('p')){
+
+  document.getElementById('p').value =
+    q.get('p');
+
+  document.getElementById('qr').innerHTML +=
+    ' &nbsp; <b>Palet:</b> ' +
+    q.get('p');
+
+}
+
+
+/* ============================================================
+   INICIALIZACIÓN
+============================================================ */
 
 contar();
 
-if('serviceWorker'in navigator)
-  addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));
 
-</script></body></html>
+/*
+   IMPORTANTE:
+   Si la PWA se abre ya conectada a Internet,
+   también intenta sincronizar los registros pendientes.
+*/
+
+if(navigator.onLine){
+
+  setTimeout(function(){
+
+    sincronizarPendientes();
+
+  },2000);
+
+}
+
+
+/* ============================================================
+   SERVICE WORKER
+============================================================ */
+
+if('serviceWorker' in navigator){
+
+  addEventListener(
+    'load',
+    function(){
+
+      navigator.serviceWorker.register(
+        './sw.js'
+      );
+
+    }
+  );
+
+}
+
+</script>
+
+</body>
+</html>
