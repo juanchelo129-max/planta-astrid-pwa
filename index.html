@@ -212,7 +212,27 @@ button{
 
 <div class="card">
 
-  <h2>📦 Acciones pendientes</h2>
+  <div class="card">
+  <h2>🧑‍🔬 Fumigador / Tratamiento</h2>
+  <p>Escaneá el QR de la puerta del contenedor para consultar los pallets pendientes de tratamiento.</p>
+  <label>Contenedor detectado</label><input id="fumContenedor" readonly>
+  <button type="button" onclick="consultarPendientesFumigador()">🔎 CONSULTAR PENDIENTES</button>
+  <div id="listaFumigador" style="margin-top:12px">Sin contenedor escaneado.</div>
+  <div id="formTratamiento" style="display:none;margin-top:15px">
+    <label>Romaneo</label><input id="fumRomaneo" readonly>
+    <label>N° Palet</label><input id="fumPalet" readonly>
+    <label>Fecha de tratamiento</label><input id="fechaTratamiento" type="date">
+    <label>Operario</label><input id="fumOperario" placeholder="Nombre del operario">
+    <label>Observación</label><textarea id="fumObservacion"></textarea>
+    <button type="button" onclick="registrarTratamientoPWA()">✅ REGISTRAR TRATAMIENTO</button>
+  </div>
+  <label style="margin-top:16px">📷 Planilla diaria de tratamiento</label>
+  <input id="planillaTratamientoFoto" type="file" accept="image/*" capture="environment">
+  <button type="button" onclick="guardarPlanillaTratamientoPWA()">📷 GUARDAR PLANILLA DIARIA</button>
+  <div id="mensajeFumigador" style="margin-top:10px"></div>
+</div>
+
+<h2>📦 Acciones pendientes</h2>
 
   <div id="lista">
     Cargando...
@@ -226,6 +246,7 @@ button{
 <script>
 
 const DB = 'AstridOffline21';
+const URL_SERVIDOR = 'https://script.google.com/macros/s/AKfycbwOfGf-OwyxNRJkcrkas6dm-TkUQF4NvtApDQhsNhZgm_VJvkzY6Ed9QyPsYAuGNGjZ/exec';
 
 
 /* ============================================================
@@ -747,6 +768,16 @@ async function sincronizarPendientes(){
 
       acciones.forEach(function(accion){
 
+        if(accion.tipo === 'TRATAMIENTO'){
+          enviarFormularioOffline({tipo:'TRATAMIENTO',offlineId:accion.offlineId || ('TRATAMIENTO-'+accion.id),datos:{contenedor:accion.contenedor,palet:accion.palet,romaneo:accion.romaneo,fechaTratamiento:accion.fechaTratamiento,operario:accion.operario,observacion:accion.observacion}});
+          return;
+        }
+
+        if(accion.tipo === 'PLANILLA'){
+          enviarFormularioOffline({tipo:'PLANILLA',offlineId:accion.offlineId || ('PLANILLA-'+accion.id),datos:{fecha:accion.fechaTratamiento,base64:accion.base64,nombreArchivo:accion.nombreArchivo}});
+          return;
+        }
+
         /* ==============================
            PALET
         ============================== */
@@ -891,6 +922,20 @@ async function sincronizarPendientes(){
 }
 
 
+function enviarFormularioOffline(payload,onerror){
+  const formulario=document.createElement('form');formulario.method='POST';formulario.action=URL_SERVIDOR;formulario.target='iframeSincronizacion';formulario.style.display='none';
+  const campo=document.createElement('input');campo.type='hidden';campo.name='payload';campo.value=JSON.stringify(payload);formulario.appendChild(campo);document.body.appendChild(formulario);
+  try{formulario.submit();}catch(e){if(onerror)onerror(e);}setTimeout(function(){formulario.remove();},5000);
+}
+let fumigacionesPendientesActuales=[];let tratamientoSeleccionado=null;
+function hoyLocal(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function mensajeFumigador(t,ok){const e=document.getElementById('mensajeFumigador');e.textContent=t||'';e.style.padding='8px';e.style.borderRadius='8px';e.style.background=ok?'#dcfce7':'#fee2e2';e.style.color=ok?'#166534':'#991b1b';}
+function renderPendientesFumigador(){const l=document.getElementById('listaFumigador');if(!fumigacionesPendientesActuales.length){l.innerHTML='<div>No hay pallets pendientes de tratamiento en este contenedor.</div>';return;}let h='<table style="width:100%"><thead><tr><th>Romaneo</th><th>Palet</th><th>Solicitud</th><th></th></tr></thead><tbody>';fumigacionesPendientesActuales.forEach(function(r,i){h+='<tr><td>'+r.romaneo+'</td><td>'+r.palet+'</td><td>'+r.fechaSolicitud+' '+(r.horaSolicitud||'')+'</td><td><button type="button" onclick="seleccionarTratamiento('+i+')">REGISTRAR</button></td></tr>';});l.innerHTML=h+'</tbody></table>';}
+function consultarPendientesFumigador(){const c=(document.getElementById('fumContenedor').value||'').trim();if(!c){mensajeFumigador('Primero escaneá el QR de la puerta del contenedor.',false);return;}if(!navigator.onLine){mensajeFumigador('Sin conexión: la consulta del servidor requiere Internet.',false);return;}const lista=document.getElementById('listaFumigador');lista.textContent='Consultando pendientes...';const cb='astridFum_'+Date.now();window[cb]=function(res){if(!res||!res.ok){lista.textContent=(res&&res.mensaje)||'No se pudo consultar el contenedor.';return;}fumigacionesPendientesActuales=res.pendientes||[];renderPendientesFumigador();mensajeFumigador(res.mensaje||'Consulta realizada.',true);};const sc=document.createElement('script');sc.src=URL_SERVIDOR+'?accion=FUMIGACIONES_PENDIENTES&contenedor='+encodeURIComponent(c)+'&prefix='+encodeURIComponent(cb);sc.onerror=function(){lista.textContent='No se pudo consultar el servidor.';};document.body.appendChild(sc);setTimeout(function(){sc.remove();try{delete window[cb]}catch(e){}},10000);}
+function seleccionarTratamiento(i){const r=fumigacionesPendientesActuales[i];if(!r)return;tratamientoSeleccionado=r;document.getElementById('fumRomaneo').value=r.romaneo||'';document.getElementById('fumPalet').value=r.palet||'';document.getElementById('fechaTratamiento').value=hoyLocal();document.getElementById('fumOperario').value='';document.getElementById('fumObservacion').value='';document.getElementById('formTratamiento').style.display='block';}
+async function registrarTratamientoPWA(){if(!tratamientoSeleccionado){mensajeFumigador('Seleccioná primero un Palet pendiente.',false);return;}const fecha=document.getElementById('fechaTratamiento').value,operario=document.getElementById('fumOperario').value.trim(),obs=document.getElementById('fumObservacion').value.trim();if(!fecha){mensajeFumigador('Indicá la fecha de tratamiento.',false);return;}if(!operario){mensajeFumigador('Indicá el operario.',false);return;}const db=await abrir(),tx=db.transaction('acciones','readwrite');tx.objectStore('acciones').add({fecha:new Date().toISOString(),tipo:'TRATAMIENTO',offlineId:'TRATAMIENTO-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),contenedor:tratamientoSeleccionado.contenedor,palet:tratamientoSeleccionado.palet,romaneo:tratamientoSeleccionado.romaneo,fechaTratamiento:fecha,operario:operario,observacion:obs});tx.oncomplete=function(){mensajeFumigador(navigator.onLine?'Tratamiento guardado. Se enviará al servidor.':'Tratamiento guardado localmente. Se sincronizará al volver Internet.',true);document.getElementById('formTratamiento').style.display='none';contar();if(navigator.onLine)sincronizarPendientes();};}
+async function guardarPlanillaTratamientoPWA(){const input=document.getElementById('planillaTratamientoFoto'),fecha=document.getElementById('fechaTratamiento').value||hoyLocal(),archivo=input.files&&input.files[0];if(!archivo){mensajeFumigador('Seleccioná la captura de la planilla diaria.',false);return;}try{const base64=await comprimirImagen(archivo),db=await abrir(),tx=db.transaction('acciones','readwrite');tx.objectStore('acciones').add({fecha:new Date().toISOString(),tipo:'PLANILLA',offlineId:'PLANILLA-'+fecha,fechaTratamiento:fecha,base64:base64,nombreArchivo:'Planilla_Tratamiento_'+fecha+'.jpg'});tx.oncomplete=function(){input.value='';mensajeFumigador(navigator.onLine?'Planilla guardada. Se enviará al servidor.':'Planilla guardada localmente. Se sincronizará al volver Internet.',true);contar();if(navigator.onLine)sincronizarPendientes();};}catch(e){mensajeFumigador('No se pudo preparar la imagen: '+e,false);}}
+
 /* ============================================================
    LEER QR
 ============================================================ */
@@ -917,6 +962,8 @@ if(q.get('c')){
 
   document.getElementById('c').value =
     q.get('c');
+
+  document.getElementById('fumContenedor').value = q.get('c');
 
   document.getElementById('qr').innerHTML =
     '<b>Contenedor:</b> ' +
