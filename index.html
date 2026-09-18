@@ -334,6 +334,9 @@ async function guardar(){
   let nroPalet =
     document.getElementById('p').value.trim();
 
+  let fechaElab =
+    document.getElementById('f').value;
+
 
   if(!/^[0-9]{6}$/.test(romaneo)){
 
@@ -342,7 +345,6 @@ async function guardar(){
     );
 
     return;
-
   }
 
 
@@ -353,11 +355,25 @@ async function guardar(){
     );
 
     return;
+  }
 
+
+  if(!fechaElab){
+
+    alert(
+      'Seleccioná la fecha de elaboración.'
+    );
+
+    return;
   }
 
 
   let db = await abrir();
+
+
+  /* ==============================
+     GUARDAR PALET
+  ============================== */
 
   let tx =
     db.transaction(
@@ -371,6 +387,17 @@ async function guardar(){
     fecha:
       new Date().toISOString(),
 
+    tipo:
+      'PALET',
+
+    offlineId:
+      'OFF-' +
+      Date.now() +
+      '-' +
+      Math.random()
+        .toString(36)
+        .substring(2,8),
+
     contenedor:
       contenedor,
 
@@ -381,7 +408,7 @@ async function guardar(){
       romaneo,
 
     descripcion:
-      '',
+      document.getElementById('obs').value,
 
     producto:
       document.getElementById('prod').value,
@@ -393,10 +420,10 @@ async function guardar(){
       document.getElementById('cajas').value,
 
     unidades:
-      '',
+      document.getElementById('kg').value,
 
     fechaElab:
-      document.getElementById('f').value,
+      fechaElab,
 
     clorado:
       document.getElementById('cl').value,
@@ -419,15 +446,187 @@ async function guardar(){
   });
 
 
-  tx.oncomplete = function(){
+  tx.oncomplete = async function(){
+
+    /* ==============================
+       ANÁLISIS DIARIO
+       SOLO UNA FOTO POR FECHA
+    ============================== */
+
+    let archivo =
+      document.getElementById('foto').files[0];
+
+
+    if(archivo){
+
+      try{
+
+        let yaExiste =
+          await existeAnalisisLocal(
+            fechaElab
+          );
+
+
+        if(!yaExiste){
+
+          let base64 =
+            await comprimirImagen(
+              archivo
+            );
+
+
+          let tx2 =
+            db.transaction(
+              'acciones',
+              'readwrite'
+            );
+
+
+          tx2.objectStore('acciones').add({
+
+            fecha:
+              new Date().toISOString(),
+
+            tipo:
+              'ANALISIS',
+
+            offlineId:
+              'ANALISIS-' +
+              fechaElab,
+
+            fechaAnalisis:
+              fechaElab,
+
+            base64:
+              base64,
+
+            nombreArchivo:
+              'Analisis_Diario_' +
+              fechaElab +
+              '.jpg'
+
+          });
+
+        }
+
+      }catch(error){
+
+        console.log(
+          'No se pudo preparar el análisis:',
+          error
+        );
+
+      }
+
+    }
+
 
     alert(
       'Palet guardado en el teléfono. Pendiente de sincronización.'
     );
 
+
     contar();
 
   };
+
+}
+
+
+/* ============================================================
+   ANÁLISIS DIARIO - FUNCIONES AUXILIARES
+============================================================ */
+
+async function existeAnalisisLocal(fecha){
+  let db = await abrir();
+
+  return new Promise(function(resolve){
+    let tx = db.transaction('acciones','readonly');
+    let req = tx.objectStore('acciones').getAll();
+
+    req.onsuccess = function(){
+      let acciones = req.result || [];
+
+      let existe = acciones.some(function(a){
+        return a.tipo === 'ANALISIS' &&
+               String(a.fechaAnalisis || '') === String(fecha || '');
+      });
+
+      resolve(existe);
+    };
+
+    req.onerror = function(){
+      resolve(false);
+    };
+  });
+}
+
+
+function comprimirImagen(archivo){
+
+  return new Promise(function(resolve,reject){
+
+    let lector = new FileReader();
+
+    lector.onload = function(e){
+
+      let imagen = new Image();
+
+      imagen.onload = function(){
+
+        let maximo = 1000;
+        let ancho = imagen.width;
+        let alto = imagen.height;
+
+        if(ancho > maximo || alto > maximo){
+
+          if(ancho >= alto){
+
+            alto = Math.round(alto * maximo / ancho);
+            ancho = maximo;
+
+          }else{
+
+            ancho = Math.round(ancho * maximo / alto);
+            alto = maximo;
+
+          }
+
+        }
+
+        let canvas = document.createElement('canvas');
+
+        canvas.width = ancho;
+        canvas.height = alto;
+
+        let ctx = canvas.getContext('2d');
+
+        ctx.drawImage(
+          imagen,
+          0,
+          0,
+          ancho,
+          alto
+        );
+
+        resolve(
+          canvas.toDataURL(
+            'image/jpeg',
+            0.65
+          )
+        );
+
+      };
+
+      imagen.onerror = reject;
+      imagen.src = e.target.result;
+
+    };
+
+    lector.onerror = reject;
+    lector.readAsDataURL(archivo);
+
+  });
 
 }
 
@@ -467,7 +666,43 @@ async function contar(){
 
 /* ============================================================
    SINCRONIZAR CON GOOGLE SHEETS
+   PALETS + ANÁLISIS DIARIO
 ============================================================ */
+
+function enviarFormularioOffline(payload){
+
+  let formulario = document.createElement('form');
+
+  formulario.method = 'POST';
+
+  formulario.action =
+    'https://script.google.com/macros/s/AKfycbwOfGf-OwyxNRJkcrkas6dm-TkUQF4NvtApDQhsNhZgm_VJvkzY6Ed9QyPsYAuGNGjZ/exec';
+
+  formulario.target = 'iframeSincronizacion';
+
+  formulario.style.display = 'none';
+
+  let campo = document.createElement('input');
+
+  campo.type = 'hidden';
+
+  campo.name = 'payload';
+
+  campo.value = JSON.stringify(payload);
+
+  formulario.appendChild(campo);
+
+  document.body.appendChild(formulario);
+
+  formulario.submit();
+
+  setTimeout(function(){
+
+    formulario.remove();
+
+  },5000);
+}
+
 
 async function sincronizarPendientes(){
 
@@ -495,7 +730,7 @@ async function sincronizarPendientes(){
     req.onsuccess = function(){
 
       let acciones =
-        req.result;
+        req.result || [];
 
 
       if(!acciones.length){
@@ -507,121 +742,139 @@ async function sincronizarPendientes(){
       }
 
 
+      let enviando = 0;
+
+
       acciones.forEach(function(accion){
 
-        let datos = {
+        /* ==============================
+           PALET
+        ============================== */
 
-          contenedor:
-            accion.contenedor,
+        if(accion.tipo === 'PALET' || !accion.tipo){
 
-          nroPalet:
-            accion.nroPalet,
+          let datos = {
 
-          romaneo:
-            accion.romaneo,
+            contenedor:
+              accion.contenedor,
 
-          descripcion:
-            accion.descripcion || '',
+            nroPalet:
+              accion.nroPalet || accion.palet,
 
-          producto:
-            accion.producto || '',
+            romaneo:
+              accion.romaneo,
 
-          marca:
-            accion.marca || '',
+            descripcion:
+              accion.descripcion ||
+              accion.observaciones ||
+              '',
 
-          cajas:
-            accion.cajas || '',
+            producto:
+              accion.producto || '',
 
-          unidades:
-            accion.unidades || '',
+            marca:
+              accion.marca || '',
 
-          fechaElab:
-            accion.fechaElab || '',
+            cajas:
+              accion.cajas || '',
 
-          clorado:
-            accion.clorado || '',
+            unidades:
+              accion.unidades ||
+              accion.kilos ||
+              '',
 
-          aceitado:
-            accion.aceitado || '',
+            fechaElab:
+              accion.fechaElab ||
+              accion.fechaElaboracion ||
+              '',
 
-          detectorMetales:
-            accion.detectorMetales || '',
+            clorado:
+              accion.clorado ||
+              accion.cloradoAgua ||
+              '',
 
-          solicitarFumigacion:
-            !!accion.solicitarFumigacion,
+            aceitado:
+              accion.aceitado ||
+              accion.tipoAceitado ||
+              '',
 
-          curado:
-            !!accion.curado
+            detectorMetales:
+              accion.detectorMetales ||
+              accion.detector ||
+              '',
 
-        };
+            solicitarFumigacion:
+              !!(
+                accion.solicitarFumigacion ||
+                accion.fumigacion
+              ),
 
+            curado:
+              !!accion.curado
 
-        let formulario =
-          document.createElement('form');
-
-
-        formulario.method =
-          'POST';
-
-
-        formulario.action =
-          'https://script.google.com/macros/s/AKfycbwOfGf-OwyxNRJkcrkas6dm-TkUQF4NvtApDQhsNhZgm_VJvkzY6Ed9QyPsYAuGNGjZ/exec';
-
-
-        formulario.target =
-          'iframeSincronizacion';
-
-
-        formulario.style.display =
-          'none';
-
-
-        let campo =
-          document.createElement('input');
+          };
 
 
-        campo.type =
-          'hidden';
-
-
-        campo.name =
-          'payload';
-
-
-        campo.value =
-          JSON.stringify({
+          enviarFormularioOffline({
 
             tipo:
               'PALET',
 
             offlineId:
-              'OFF-' + accion.id,
+              accion.offlineId ||
+              ('OFF-' + accion.id),
 
             datos:
               datos
 
           });
 
+          enviando++;
 
-        formulario.appendChild(campo);
-
-        document.body.appendChild(formulario);
-
-
-        formulario.submit();
+        }
 
 
-        setTimeout(function(){
+        /* ==============================
+           ANÁLISIS DIARIO
+        ============================== */
 
-          formulario.remove();
+        if(accion.tipo === 'ANALISIS'){
 
-        },5000);
+          enviarFormularioOffline({
+
+            tipo:
+              'ANALISIS',
+
+            offlineId:
+              accion.offlineId ||
+              ('ANALISIS-' +
+               accion.fechaAnalisis),
+
+            fecha:
+              accion.fechaAnalisis,
+
+            base64:
+              accion.base64,
+
+            nombreArchivo:
+              accion.nombreArchivo ||
+              (
+                'Analisis_Diario_' +
+                accion.fechaAnalisis +
+                '.jpg'
+              )
+
+          });
+
+          enviando++;
+
+        }
 
       });
 
 
       document.getElementById('lista').textContent =
-        acciones.length +
+        enviando +
         ' acción(es) enviándose a Google Sheets...';
 
     };
